@@ -6,8 +6,8 @@ use Rss\Vlog\Core\Support\LogLevel;
 use Rss\Vlog\Core\Support\Time;
 
 /**
- * The level and time read from an entry's first line, which is all the index
- * needs without parsing the whole entry.
+ * The level, time and message read from an entry's first line, which is all
+ * the index needs without parsing the whole entry.
  */
 final class EntryHeader
 {
@@ -15,26 +15,50 @@ final class EntryHeader
 
     private ?int $timestamp;
 
+    private ?string $message;
+
+    /**
+     * The last time parsed, since consecutive entries often share a time.
+     */
+    private static ?string $lastTime = null;
+
+    private static ?int $lastTimestamp = null;
+
     /**
      * @param  string|null  $level  A standard level name from LogLevel.
+     * @param  string|null  $message  The message text on the first line, which may include context.
      */
-    public function __construct(?string $level = null, ?int $timestamp = null)
+    public function __construct(?string $level = null, ?int $timestamp = null, ?string $message = null)
     {
         $this->level = $level;
         $this->timestamp = $timestamp;
+        $this->message = $message;
     }
 
     /**
-     * Create a header from a level and time as written in the log file.
+     * Create a header from a level, time and message as written in the log file.
      */
-    public static function fromText(?string $rawLevel, ?string $time): self
+    public static function fromText(?string $rawLevel, ?string $time, ?string $message = null): self
     {
-        $parsedTime = $time === null ? null : Time::parse($time);
-
         return new self(
             $rawLevel === null ? null : LogLevel::normalize($rawLevel),
-            $parsedTime === null ? null : $parsedTime->getTimestamp()
+            $time === null ? null : self::timestampOf($time),
+            $message
         );
+    }
+
+    private static function timestampOf(string $time): ?int
+    {
+        // Times without a zone depend on the default zone, so it's part of the key.
+        $key = date_default_timezone_get().'|'.$time;
+
+        if ($key !== self::$lastTime) {
+            $parsedTime = Time::parse($time);
+            self::$lastTime = $key;
+            self::$lastTimestamp = $parsedTime === null ? null : $parsedTime->getTimestamp();
+        }
+
+        return self::$lastTimestamp;
     }
 
     /**
@@ -51,5 +75,13 @@ final class EntryHeader
     public function timestamp(): ?int
     {
         return $this->timestamp;
+    }
+
+    /**
+     * Get the message text on the entry's first line.
+     */
+    public function message(): ?string
+    {
+        return $this->message;
     }
 }

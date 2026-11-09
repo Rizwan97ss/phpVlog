@@ -22,23 +22,23 @@ use Rss\Vlog\Core\Support\LogLevel;
  *     entries: int,
  *     levels: array<string, int>
  * }
- * @phpstan-type IndexRecord array{offset: int, timestamp: int|null, level: string|null}
+ * @phpstan-type IndexRecord array{offset: int, timestamp: int|null, level: string|null, group: int}
  */
 final class IndexStorage
 {
     /**
      * The index layout version. Indexes from another version are rebuilt.
      */
-    public const VERSION = 1;
+    public const VERSION = 2;
 
     /**
      * Each record is the entry's byte offset (8 bytes), its Unix timestamp
      * (4 bytes, 0 when unknown), its level code (1 byte, 0 when unknown) and
-     * 3 bytes of padding.
+     * its group number (3 bytes, 0 when ungrouped).
      */
     private const RECORD_BYTES = 16;
 
-    private const RECORD_FORMAT = 'PVCx3';
+    private const RECORD_FORMAT = 'PVCvC';
 
     private string $directory;
 
@@ -97,6 +97,27 @@ final class IndexStorage
     }
 
     /**
+     * Delete the index's files. A file another process holds open can't be
+     * deleted on Windows, and is left for the pruner.
+     */
+    public function delete(): void
+    {
+        set_error_handler(function (): bool {
+            return true;
+        });
+
+        try {
+            foreach (['.idx', '.json', '.groups.json', '.lock'] as $extension) {
+                if (is_file($this->basePath.$extension)) {
+                    unlink($this->basePath.$extension);
+                }
+            }
+        } finally {
+            restore_error_handler();
+        }
+    }
+
+    /**
      * Read the index state, or return null when there's no valid index.
      *
      * @return IndexState|null
@@ -145,25 +166,72 @@ final class IndexStorage
      */
     public function writeState(array $state): void
     {
-        $temporaryPath = $this->basePath.'.json.'.getmypid().'.tmp';
+        $this->writeJson($this->basePath.'.json', $state);
+    }
 
-        if (@file_put_contents($temporaryPath, (string) json_encode($state)) === false
-            || ! @rename($temporaryPath, $this->basePath.'.json')) {
+    /**
+     * Read the saved groups, or return null when there are none.
+     *
+     * @return array<array-key, mixed>|null
+     */
+    public function readGroups(): ?array
+    {
+        $path = $this->basePath.'.groups.json';
+        $json = is_file($path) ? @file_get_contents($path) : false;
+        $groups = $json === false ? null : json_decode($json, true);
+
+        return is_array($groups) ? $groups : null;
+    }
+
+    /**
+     * Replace the saved groups atomically.
+     *
+     * @param  array<string, mixed>  $groups
+     *
+     * @throws IndexException
+     */
+    public function writeGroups(array $groups): void
+    {
+        $this->writeJson($this->basePath.'.groups.json', $groups);
+    }
+
+    /**
+     * Write JSON to a file by writing a temporary file and renaming it, so
+     * readers never see a half-written file.
+     *
+     * @param  array<array-key, mixed>  $data
+     *
+     * @throws IndexException
+     */
+    private function writeJson(string $path, array $data): void
+    {
+        $temporaryPath = $path.'.'.getmypid().'.tmp';
+        $json = (string) json_encode($data, JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        if (@file_put_contents($temporaryPath, $json) === false || ! @rename($temporaryPath, $path)) {
             @unlink($temporaryPath);
 
-            throw IndexException::fileNotWritable($this->basePath.'.json');
+            throw IndexException::fileNotWritable($path);
         }
     }
 
     /**
      * Encode one entry's record.
      */
-    public static function encodeRecord(int $offset, ?int $timestamp, ?string $level): string
+    public static function encodeRecord(int $offset, ?int $timestamp, ?string $level, int $group = 0): string
     {
         $levelCode = $level === null ? false : array_search($level, LogLevel::all(), true);
         $storableTime = $timestamp !== null && $timestamp > 0 && $timestamp <= 0xFFFFFFFF ? $timestamp : 0;
+        $storableGroup = $group > 0 && $group <= 0xFFFFFF ? $group : 0;
 
-        return pack(self::RECORD_FORMAT, $offset, $storableTime, $levelCode === false ? 0 : $levelCode + 1);
+        return pack(
+            self::RECORD_FORMAT,
+            $offset,
+            $storableTime,
+            $levelCode === false ? 0 : $levelCode + 1,
+            $storableGroup & 0xFFFF,
+            $storableGroup >> 16
+        );
     }
 
     /**
@@ -220,13 +288,14 @@ final class IndexStorage
         $records = [];
 
         for ($start = 0; $start + self::RECORD_BYTES <= strlen($data); $start += self::RECORD_BYTES) {
-            /** @var array{offset: int, timestamp: int, level: int} $record */
-            $record = unpack('Poffset/Vtimestamp/Clevel', substr($data, $start, self::RECORD_BYTES));
+            /** @var array{offset: int, timestamp: int, level: int, groupLow: int, groupHigh: int} $record */
+            $record = unpack('Poffset/Vtimestamp/Clevel/vgroupLow/CgroupHigh', substr($data, $start, self::RECORD_BYTES));
 
             $records[] = [
                 'offset' => $record['offset'],
                 'timestamp' => $record['timestamp'] === 0 ? null : $record['timestamp'],
                 'level' => $levels[$record['level'] - 1] ?? null,
+                'group' => $record['groupLow'] | ($record['groupHigh'] << 16),
             ];
         }
 

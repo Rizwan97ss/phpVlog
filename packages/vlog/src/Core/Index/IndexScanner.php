@@ -79,7 +79,7 @@ final class IndexScanner
                     continue;
                 }
 
-                $header = new EntryHeader;
+                $header = new EntryHeader(null, null, $line);
             }
 
             $onEntry($lineStart, $header);

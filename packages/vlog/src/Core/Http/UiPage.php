@@ -25,8 +25,9 @@ final class UiPage
      *
      * @param  string  $apiUrl  The URL the API routes start with, such as "/vlog/api".
      * @param  string|null  $nonce  A Content Security Policy nonce for the inline script and styles.
+     * @param  array<string, scalar|null>  $settings  More settings for the interface, such as "canManage" and "csrfToken".
      */
-    public function render(string $apiUrl, string $title = 'Vlog', ?string $nonce = null): string
+    public function render(string $apiUrl, string $title = 'Vlog', ?string $nonce = null, array $settings = []): string
     {
         $script = $this->asset('vlog.js');
         $styles = $this->asset('vlog.css');
@@ -39,7 +40,7 @@ final class UiPage
         }
 
         $config = (string) json_encode(
-            ['apiUrl' => $apiUrl, 'title' => $title],
+            array_merge($settings, ['apiUrl' => $apiUrl, 'title' => $title]),
             JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_SLASHES
         );
 

@@ -40,8 +40,43 @@ final class QueryInput
             return null;
         }
 
+        // JSON request bodies hold numbers and booleans as their own types.
+        if (is_int($value)) {
+            return (string) $value;
+        }
+
+        if (is_bool($value)) {
+            return $value ? 'true' : 'false';
+        }
+
         if (! is_string($value)) {
             throw new InvalidArgumentException("The {$key} parameter must be a string.");
+        }
+
+        return $value;
+    }
+
+    /**
+     * Get a JSON object, such as an entry's context, or null when it's missing.
+     *
+     * @return array<array-key, mixed>|null
+     *
+     * @throws InvalidArgumentException
+     */
+    public function object(string $key, int $maxBytes): ?array
+    {
+        $value = $this->query[$key] ?? null;
+
+        if ($value === null || $value === []) {
+            return null;
+        }
+
+        if (! is_array($value)) {
+            throw new InvalidArgumentException("The {$key} parameter must be an object.");
+        }
+
+        if (strlen((string) json_encode($value)) > $maxBytes) {
+            throw new InvalidArgumentException("The {$key} parameter can be up to {$maxBytes} bytes.");
         }
 
         return $value;

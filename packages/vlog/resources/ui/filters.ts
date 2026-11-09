@@ -13,6 +13,7 @@ export interface Filters {
     from: string;
     to: string;
     order: Order;
+    group: number | null;
 }
 
 /**
@@ -21,8 +22,14 @@ export interface Filters {
 export interface ViewState {
     fileId: string | null;
     page: number;
+    view: View;
     filters: Filters;
 }
+
+/**
+ * Whether the page lists entries or groups of similar entries.
+ */
+export type View = 'entries' | 'groups';
 
 export const defaultFilters: Filters = {
     levels: [],
@@ -32,6 +39,7 @@ export const defaultFilters: Filters = {
     from: '',
     to: '',
     order: 'newest',
+    group: null,
 };
 
 /**
@@ -43,7 +51,8 @@ export function isFiltering(filters: Filters): boolean {
         filters.levels.length > 0 ||
         filters.query !== '' ||
         filters.from !== '' ||
-        filters.to !== ''
+        filters.to !== '' ||
+        filters.group !== null
     );
 }
 
@@ -64,6 +73,7 @@ export function searchParams(
         from: filters.from,
         to: filters.to,
         order: filters.order,
+        group: filters.group === null ? undefined : String(filters.group),
         cursor: cursor === null ? undefined : String(cursor),
         limit: String(limit),
     };
@@ -76,6 +86,7 @@ export function searchParams(
 export function readViewState(search: string): ViewState {
     const params = new URLSearchParams(search);
     const page = Number.parseInt(params.get('page') ?? '1', 10);
+    const group = Number.parseInt(params.get('group') ?? '', 10);
     const levels = (params.get('levels') ?? '')
         .split(',')
         .map((level) => level.trim())
@@ -84,6 +95,7 @@ export function readViewState(search: string): ViewState {
     return {
         fileId: params.get('file') || null,
         page: Number.isFinite(page) && page > 0 ? page : 1,
+        view: params.get('view') === 'groups' ? 'groups' : 'entries',
         filters: {
             levels,
             query: params.get('q') ?? '',
@@ -92,6 +104,7 @@ export function readViewState(search: string): ViewState {
             from: params.get('from') ?? '',
             to: params.get('to') ?? '',
             order: params.get('order') === 'oldest' ? 'oldest' : 'newest',
+            group: Number.isFinite(group) && group > 0 ? group : null,
         },
     };
 }
@@ -105,6 +118,10 @@ export function writeViewState(state: ViewState): string {
 
     if (state.fileId !== null) {
         params.set('file', state.fileId);
+    }
+
+    if (state.view !== 'entries') {
+        params.set('view', state.view);
     }
 
     if (state.page > 1 && !isFiltering(filters)) {
@@ -133,6 +150,10 @@ export function writeViewState(state: ViewState): string {
 
     if (filters.to !== '') {
         params.set('to', filters.to);
+    }
+
+    if (filters.group !== null) {
+        params.set('group', String(filters.group));
     }
 
     if (filters.order !== 'newest') {

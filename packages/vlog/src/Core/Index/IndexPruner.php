@@ -15,7 +15,7 @@ final class IndexPruner
     /**
      * Matches the files IndexStorage creates for one log file.
      */
-    private const INDEX_FILE = '/^([0-9a-f]{40})\.(?:idx|json|lock)$/';
+    private const INDEX_FILE = '/^([0-9a-f]{40})\.(?:idx|json|groups\.json|lock)$/';
 
     /**
      * The file whose modification time records the last prune.

@@ -23,7 +23,7 @@ final class PlainTextParser implements Parser
 
     public function headerOf(string $line): ?EntryHeader
     {
-        return $this->isNoise($line) ? null : new EntryHeader;
+        return $this->isNoise($line) ? null : new EntryHeader(null, null, $line);
     }
 
     public function isNoise(string $line): bool

@@ -33,7 +33,11 @@ final class JsonLinesParser implements Parser
             return null;
         }
 
-        return EntryHeader::fromText($this->level($record), $this->stringValue($record['datetime'] ?? null));
+        return EntryHeader::fromText(
+            $this->level($record),
+            $this->stringValue($record['datetime'] ?? null),
+            $this->stringValue($record['message']) ?? ''
+        );
     }
 
     public function isNoise(string $line): bool

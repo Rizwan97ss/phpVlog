@@ -174,7 +174,7 @@ final class IndexSearcher
         for ($record = $batchStart; $record < $batchEnd; $record++) {
             $current = $records[$record - $batchStart];
 
-            if (! $filter->acceptsHeader($current['level'], $current['timestamp'])) {
+            if (! $filter->acceptsHeader($current['level'], $current['timestamp'], $current['group'])) {
                 continue;
             }
 

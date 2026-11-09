@@ -25,12 +25,15 @@ final class SearchFilter
 
     private ?TextMatcher $matcher;
 
+    private ?int $group;
+
     /**
      * @param  list<string>|null  $levels  Levels to include, which may include "unknown".
      * @param  DateTimeInterface|null  $from  The earliest entry time to include.
      * @param  DateTimeInterface|null  $to  The latest entry time to include.
      * @param  string|null  $query  Text to find anywhere in the entry, including its context and stack trace.
      * @param  bool  $regex  Whether the query is a regular expression, written without delimiters.
+     * @param  int|null  $group  A group number from the index, to find only that group's entries.
      *
      * @throws InvalidArgumentException When a level isn't recognized.
      * @throws InvalidSearchPatternException
@@ -41,8 +44,10 @@ final class SearchFilter
         ?DateTimeInterface $to = null,
         ?string $query = null,
         bool $regex = false,
-        bool $caseSensitive = false
+        bool $caseSensitive = false,
+        ?int $group = null
     ) {
+        $this->group = $group;
         $this->levels = $levels === null ? null : $this->normalizeLevels($levels);
         $this->from = $from === null ? null : $from->getTimestamp();
         $this->to = $to === null ? null : $to->getTimestamp();
@@ -73,7 +78,7 @@ final class SearchFilter
      */
     public function onlyLevels(): ?array
     {
-        if ($this->matcher !== null || $this->from !== null || $this->to !== null) {
+        if ($this->matcher !== null || $this->from !== null || $this->to !== null || $this->group !== null) {
             return null;
         }
 
@@ -86,9 +91,14 @@ final class SearchFilter
      * Entries without a known time never match a date range.
      *
      * @param  string|null  $level  A standard level name, or null when it isn't recognized.
+     * @param  int  $group  The entry's group number, or 0 when it isn't grouped.
      */
-    public function acceptsHeader(?string $level, ?int $timestamp): bool
+    public function acceptsHeader(?string $level, ?int $timestamp, int $group = 0): bool
     {
+        if ($this->group !== null && $group !== $this->group) {
+            return false;
+        }
+
         if ($this->levels !== null && ! in_array($level ?? LogLevel::UNKNOWN, $this->levels, true)) {
             return false;
         }

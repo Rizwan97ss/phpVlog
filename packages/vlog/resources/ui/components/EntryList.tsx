@@ -8,15 +8,24 @@ import {
     splitException,
 } from '../format';
 import type { LogEntry } from '../types';
+import { FileLocation, StackTrace } from './Source';
+
+/**
+ * Saves an entry as a bookmark with a note.
+ */
+export type SaveEntry = (entry: LogEntry, note: string) => Promise<void>;
 
 interface Props {
     entries: LogEntry[];
+    onSave?: SaveEntry;
+    /** Offsets of entries that just arrived, which are highlighted. */
+    fresh?: Set<number>;
 }
 
 /**
  * The entries, each expandable to show its details.
  */
-export function EntryList({ entries }: Props) {
+export function EntryList({ entries, onSave, fresh }: Props) {
     const [expanded, setExpanded] = useState<Set<number>>(new Set());
 
     function toggle(offset: number) {
@@ -41,6 +50,8 @@ export function EntryList({ entries }: Props) {
                     entry={entry}
                     open={expanded.has(entry.offset)}
                     onToggle={() => toggle(entry.offset)}
+                    onSave={onSave}
+                    fresh={fresh?.has(entry.offset) ?? false}
                 />
             ))}
         </ul>
@@ -51,11 +62,13 @@ interface RowProps {
     entry: LogEntry;
     open: boolean;
     onToggle: () => void;
+    onSave?: SaveEntry;
+    fresh: boolean;
 }
 
-function EntryRow({ entry, open, onToggle }: RowProps) {
+function EntryRow({ entry, open, onToggle, onSave, fresh }: RowProps) {
     return (
-        <li>
+        <li class={fresh ? 'vlog-fresh' : undefined}>
             <button
                 type="button"
                 onClick={onToggle}
@@ -80,16 +93,76 @@ function EntryRow({ entry, open, onToggle }: RowProps) {
                 </span>
                 {entry.stack.length > 0 && (
                     <span class="mt-0.5 shrink-0 text-xs text-zinc-400" title="Has a stack trace">
-                        {entry.stack.length} frames
+                        {entry.stack.length} {entry.stack.length === 1 ? 'frame' : 'frames'}
                     </span>
                 )}
             </button>
-            {open && <EntryDetails entry={entry} />}
+            {open && <EntryDetails entry={entry} onSave={onSave} />}
         </li>
     );
 }
 
-function EntryDetails({ entry }: { entry: LogEntry }) {
+/**
+ * Saves an entry with an optional note.
+ */
+function SaveControl({ entry, onSave }: { entry: LogEntry; onSave: SaveEntry }) {
+    const [state, setState] = useState<'idle' | 'editing' | 'saving' | 'saved'>('idle');
+    const [note, setNote] = useState('');
+    const [error, setError] = useState<string | null>(null);
+
+    async function save() {
+        setState('saving');
+        setError(null);
+
+        try {
+            await onSave(entry, note.trim());
+            setState('saved');
+        } catch (caught) {
+            setError(caught instanceof Error ? caught.message : 'The entry could not be saved.');
+            setState('editing');
+        }
+    }
+
+    if (state === 'saved') {
+        return <span class="text-xs text-emerald-700 dark:text-emerald-400">Saved</span>;
+    }
+
+    if (state === 'idle') {
+        return (
+            <button type="button" onClick={() => setState('editing')} class="text-xs text-zinc-500 underline hover:text-zinc-900 dark:hover:text-zinc-100">
+                Save
+            </button>
+        );
+    }
+
+    return (
+        <span class="flex flex-wrap items-center gap-2">
+            <input
+                type="text"
+                value={note}
+                maxLength={2000}
+                autoFocus
+                placeholder="Add a note (optional)"
+                aria-label="Note"
+                onInput={(event) => setNote(event.currentTarget.value)}
+                onKeyDown={(event) => event.key === 'Enter' && save()}
+                class="w-56 rounded-md border border-zinc-300 bg-white px-2 py-0.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+            />
+            <button type="button" disabled={state === 'saving'} onClick={save} class="text-xs font-medium underline">
+                {state === 'saving' ? 'Saving…' : 'Save'}
+            </button>
+            <button type="button" onClick={() => setState('idle')} class="text-xs text-zinc-500 underline">
+                Cancel
+            </button>
+            {error !== null && <span role="alert" class="text-xs text-red-600 dark:text-red-400">{error}</span>}
+        </span>
+    );
+}
+
+/**
+ * An entry's full message, exception, stack trace and context.
+ */
+export function EntryDetails({ entry, onSave }: { entry: LogEntry; onSave?: SaveEntry }) {
     const { exception, rest } = splitException(entry.context);
     const [copied, setCopied] = useState(false);
 
@@ -115,9 +188,12 @@ function EntryDetails({ entry }: { entry: LogEntry }) {
                 </p>
             )}
             <Section title="Message" action={
-                <button type="button" onClick={copy} class="text-xs text-zinc-500 underline hover:text-zinc-900 dark:hover:text-zinc-100">
-                    {copied ? 'Copied' : 'Copy'}
-                </button>
+                <span class="flex items-center gap-3">
+                    {onSave !== undefined && <SaveControl entry={entry} onSave={onSave} />}
+                    <button type="button" onClick={copy} class="text-xs text-zinc-500 underline hover:text-zinc-900 dark:hover:text-zinc-100">
+                        {copied ? 'Copied' : 'Copy'}
+                    </button>
+                </span>
             }>
                 <pre class="font-mono text-xs break-words whitespace-pre-wrap">{entry.message}</pre>
             </Section>
@@ -126,26 +202,16 @@ function EntryDetails({ entry }: { entry: LogEntry }) {
                     <pre class="font-mono text-xs break-words whitespace-pre-wrap text-red-700 dark:text-red-400">{exception}</pre>
                 </Section>
             )}
+            {entry.origin !== null && entry.origin !== undefined && (
+                <Section title="Thrown in">
+                    <div class="font-mono text-xs">
+                        <FileLocation file={entry.origin.file} line={entry.origin.line} />
+                    </div>
+                </Section>
+            )}
             {entry.stack.length > 0 && (
                 <Section title="Stack trace">
-                    <ol class="space-y-1 font-mono text-xs">
-                        {entry.stack.map((frame) => (
-                            <li key={frame.index} class="flex gap-3">
-                                <span class="w-6 shrink-0 text-right text-zinc-400">#{frame.index}</span>
-                                <span class="min-w-0 break-all">
-                                    {frame.file !== null && (
-                                        <span class="text-zinc-900 dark:text-zinc-100">
-                                            {frame.file}
-                                            {frame.line !== null && <span class="text-zinc-500">:{frame.line}</span>}
-                                        </span>
-                                    )}
-                                    {frame.call !== null && (
-                                        <span class="block text-zinc-500">{frame.call}</span>
-                                    )}
-                                </span>
-                            </li>
-                        ))}
-                    </ol>
+                    <StackTrace frames={entry.stack} />
                 </Section>
             )}
             {hasContent(rest) && (

@@ -104,4 +104,40 @@ return [
 
     'max_entry_bytes' => 1048576,
 
+    /*
+    |--------------------------------------------------------------------------
+    | Browser Errors
+    |--------------------------------------------------------------------------
+    |
+    | Vlog can add a small script to your application's HTML pages that
+    | reports JavaScript errors, unhandled promise rejections and files that
+    | fail to load. They're written to "path", which Vlog shows like any other
+    | log. When "enabled" is null, this only happens in the local environment.
+    |
+    */
+
+    'browser_errors' => [
+        'enabled' => env('VLOG_BROWSER_ERRORS'),
+        'path' => storage_path('logs/browser-errors.log'),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Source Previews and Editor Links
+    |--------------------------------------------------------------------------
+    |
+    | Users the "manageVlog" gate allows can preview the code around each
+    | stack frame. Only PHP files inside "paths" are shown, never hidden files
+    | such as ".env". "editor" is the editor that file links open in, such as
+    | "vscode" or "phpstorm". Each user can also choose their own in Vlog.
+    |
+    */
+
+    'source' => [
+        'enabled' => env('VLOG_SOURCE_PREVIEW', true),
+        'paths' => [base_path()],
+    ],
+
+    'editor' => env('VLOG_EDITOR'),
+
 ];

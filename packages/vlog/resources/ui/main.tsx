@@ -13,6 +13,10 @@ function readConfig(): VlogConfig {
     return {
         apiUrl: config.apiUrl ?? './api',
         title: config.title ?? 'Vlog',
+        canManage: config.canManage === true,
+        canPreviewSource: config.canPreviewSource === true,
+        csrfToken: typeof config.csrfToken === 'string' ? config.csrfToken : null,
+        editor: typeof config.editor === 'string' ? config.editor : null,
     };
 }
 

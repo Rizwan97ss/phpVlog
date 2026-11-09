@@ -36,7 +36,7 @@ final class LaravelParser implements Parser
             return null;
         }
 
-        return EntryHeader::fromText($matches[3], $matches[1]);
+        return EntryHeader::fromText($matches[3], $matches[1], $matches[4] ?? '');
     }
 
     public function isNoise(string $line): bool

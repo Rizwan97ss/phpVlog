@@ -82,11 +82,20 @@ it('returns an empty page instead of failing for very large page numbers', funct
         ->assertJsonCount(0, 'data');
 });
 
-it('accepts only GET requests', function () {
+it('rejects requests that change something without the Vlog request header', function () {
+    $path = $this->writeLog('laravel.log', '[2026-11-09 10:00:00] local.INFO: Only entry'."\n");
+
+    $this->deleteJson(vlogOnlyFileUrl($this))->assertForbidden();
+    $this->postJson('/vlog/api/entries', ['message' => 'Hello'])->assertForbidden();
+
+    expect(is_file($path))->toBeTrue();
+});
+
+it('rejects methods the routes do not accept', function () {
     $this->writeLog('laravel.log', '[2026-11-09 10:00:00] local.INFO: Only entry'."\n");
 
-    $this->postJson('/vlog/api/files')->assertStatus(405);
-    $this->deleteJson(vlogOnlyFileUrl($this))->assertStatus(405);
+    $this->withHeaders(['X-Vlog-Request' => '1'])->postJson('/vlog/api/files')->assertStatus(405);
+    $this->withHeaders(['X-Vlog-Request' => '1'])->putJson(vlogOnlyFileUrl($this))->assertStatus(405);
 });
 
 it('does not reveal the index folder when the index cannot be written', function () {

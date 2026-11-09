@@ -3,6 +3,7 @@
 use Rss\Vlog\Core\Entry\LogEntry;
 use Rss\Vlog\Core\Exceptions\IndexException;
 use Rss\Vlog\Core\Index\LogIndex;
+use Rss\Vlog\Core\Search\SearchFilter;
 
 /**
  * Get the messages of a list of entries.
@@ -205,3 +206,44 @@ it('throws when the index directory cannot be created', function () {
 
     $index->refresh();
 })->throws(IndexException::class);
+
+it('groups similar entries and finds the entries of one group', function () {
+    $log = "[2026-11-09 10:00:00] local.ERROR: Order 1 failed\n"
+        ."[2026-11-09 10:00:01] local.INFO: Order 1 placed\n"
+        ."[2026-11-09 10:00:02] local.ERROR: Order 2 failed {\"order_id\":2}\n";
+    $index = LogIndex::open(vlogTemporaryLog($log), vlogTemporaryDirectory());
+    $index->refresh();
+
+    $groups = $index->groups();
+    $failed = $groups[0];
+    $result = $index->search(new SearchFilter(null, null, null, null, false, false, $failed['id']));
+
+    expect(array_column($groups, 'pattern'))->toBe(['Order {n} failed', 'Order {n} placed']);
+    expect($failed['count'])->toBe(2);
+    expect(vlogMessagesOf($result->entries()))->toBe(['Order 2 failed', 'Order 1 failed']);
+});
+
+it('adds entries written after the last refresh to their groups', function () {
+    $path = vlogTemporaryLog("[2026-11-09 10:00:00] local.ERROR: Order 1 failed\n");
+    $index = LogIndex::open($path, vlogTemporaryDirectory());
+    $index->refresh();
+    file_put_contents($path, "[2026-11-09 10:00:05] local.ERROR: Order 7 failed\n", FILE_APPEND);
+
+    $index->refresh();
+
+    expect($index->groups())->toHaveCount(1);
+    expect($index->groups()[0]['count'])->toBe(2);
+});
+
+it('rebuilds an index whose groups no longer match it', function () {
+    $path = vlogTemporaryLog("[2026-11-09 10:00:00] local.ERROR: Order 1 failed\n");
+    $directory = vlogTemporaryDirectory();
+    LogIndex::open($path, $directory)->refresh();
+    unlink((string) glob($directory.'/*.groups.json')[0]);
+
+    $index = LogIndex::open($path, $directory);
+    $index->refresh();
+
+    expect($index->count())->toBe(1);
+    expect($index->groups()[0]['count'])->toBe(1);
+});

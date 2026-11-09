@@ -30,7 +30,7 @@ final class CodeIgniterParser implements Parser
             return null;
         }
 
-        return EntryHeader::fromText($matches[1], $matches[2]);
+        return EntryHeader::fromText($matches[1], $matches[2], $matches[3]);
     }
 
     /**

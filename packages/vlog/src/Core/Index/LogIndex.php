@@ -6,6 +6,7 @@ use Rss\Vlog\Core\Entry\EntryHeader;
 use Rss\Vlog\Core\Entry\LogEntry;
 use Rss\Vlog\Core\Exceptions\IndexException;
 use Rss\Vlog\Core\Exceptions\LogFileException;
+use Rss\Vlog\Core\Grouping\Groups;
 use Rss\Vlog\Core\Parsers\FormatDetector;
 use Rss\Vlog\Core\Parsers\Parser;
 use Rss\Vlog\Core\Reader\LogFile;
@@ -177,6 +178,54 @@ final class LogIndex
     }
 
     /**
+     * Get the entry that starts at a byte offset, or null when no indexed
+     * entry starts there.
+     *
+     * @throws LogFileException
+     */
+    public function entryAt(int $offset): ?LogEntry
+    {
+        $low = 0;
+        $high = $this->count() - 1;
+
+        // Records are in file order, so their offsets are sorted.
+        while ($low <= $high) {
+            $middle = intdiv($low + $high, 2);
+            $record = $this->storage->readRecords($middle, 1)[0] ?? null;
+
+            if ($record === null) {
+                return null;
+            }
+
+            if ($record['offset'] < $offset) {
+                $low = $middle + 1;
+            } elseif ($record['offset'] > $offset) {
+                $high = $middle - 1;
+            } else {
+                $next = $this->storage->readRecords($middle + 1, 1)[0] ?? null;
+                $end = $middle + 1 < $this->count() && $next !== null ? $next['offset'] : $this->state['indexedBytes'];
+
+                return $this->reader->entriesAt($this->path, [['offset' => $offset, 'length' => max(0, $end - $offset)]])[0] ?? null;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the groups of similar entries, with their counts and daily counts.
+     *
+     * @return list<array{id: int, key: string, level: string|null, pattern: string, sample: string, count: int, first_seen: int|null, last_seen: int|null, first_offset: int, last_offset: int, days: array<string, int>}>
+     */
+    public function groups(): array
+    {
+        $saved = $this->storage->readGroups();
+        $groups = $saved === null ? null : Groups::fromArray($saved, $this->indexedBytes());
+
+        return $groups === null ? [] : $groups->all();
+    }
+
+    /**
      * Find indexed entries that match a filter.
      *
      * Results come in pages: pass the result's nextCursor() to get the next
@@ -220,9 +269,16 @@ final class LogIndex
 
         try {
             $state = $this->storage->readState();
+            $savedGroups = $this->storage->readGroups();
+            $groups = $state === null || $savedGroups === null ? null : Groups::fromArray($savedGroups, $state['indexedBytes']);
 
-            if ($state === null || ! $this->matchesFile($state, $handle)) {
+            // The groups must describe exactly the indexed part of the file,
+            // or every count would be wrong, so a mismatch rebuilds the index.
+            $rebuilding = $state === null || $groups === null || ! $this->matchesFile($state, $handle);
+
+            if ($rebuilding) {
                 $state = $this->emptyState();
+                $groups = new Groups;
             }
 
             $levels = $state['levels'];
@@ -230,11 +286,11 @@ final class LogIndex
             $firstUnwritten = $entries;
             $buffer = '';
 
-            $onEntry = function (int $offset, EntryHeader $header) use (&$levels, &$entries, &$firstUnwritten, &$buffer): void {
+            $onEntry = function (int $offset, EntryHeader $header) use (&$levels, &$entries, &$firstUnwritten, &$buffer, $groups): void {
                 $level = $header->level() ?? LogLevel::UNKNOWN;
                 $levels[$level] = ($levels[$level] ?? 0) + 1;
                 $entries++;
-                $buffer .= IndexStorage::encodeRecord($offset, $header->timestamp(), $header->level());
+                $buffer .= IndexStorage::encodeRecord($offset, $header->timestamp(), $header->level(), $groups->add($offset, $header));
 
                 if ($entries - $firstUnwritten >= self::RECORDS_PER_WRITE) {
                     $this->storage->writeRecords($firstUnwritten, $buffer);
@@ -246,7 +302,13 @@ final class LogIndex
             [$indexedBytes, $finished] = (new IndexScanner($this->parser))
                 ->scan($handle, $state['indexedBytes'], $state['entries'] > 0, $onEntry, $deadline);
 
+            // Nothing new was indexed, so the saved files are already current.
+            if (! $rebuilding && $indexedBytes === $state['indexedBytes']) {
+                return $finished;
+            }
+
             $this->storage->writeRecords($firstUnwritten, $buffer);
+            $this->storage->writeGroups($groups->toArray($indexedBytes));
 
             $fingerprintBytes = min(self::FINGERPRINT_BYTES, $indexedBytes);
 

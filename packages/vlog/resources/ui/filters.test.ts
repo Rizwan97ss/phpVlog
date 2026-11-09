@@ -10,12 +10,13 @@ import {
 describe('readViewState', () => {
     it('reads the file, page and filters from the URL', () => {
         const state = readViewState(
-            '?file=abc&page=3&levels=error,warning&q=timeout&regex=1&case=1&from=2026-11-01T00:00&to=2026-11-02T00:00&order=oldest',
+            '?file=abc&page=3&view=groups&levels=error,warning&q=timeout&regex=1&case=1&from=2026-11-01T00:00&to=2026-11-02T00:00&order=oldest&group=7',
         );
 
         expect(state).toEqual({
             fileId: 'abc',
             page: 3,
+            view: 'groups',
             filters: {
                 levels: ['error', 'warning'],
                 query: 'timeout',
@@ -24,14 +25,16 @@ describe('readViewState', () => {
                 from: '2026-11-01T00:00',
                 to: '2026-11-02T00:00',
                 order: 'oldest',
+                group: 7,
             },
         });
     });
 
     it('falls back to defaults for missing and invalid values', () => {
-        expect(readViewState('?page=-2&order=sideways&levels=,')).toEqual({
+        expect(readViewState('?page=-2&order=sideways&levels=,&view=other&group=abc')).toEqual({
             fileId: null,
             page: 1,
+            view: 'entries',
             filters: defaultFilters,
         });
     });
@@ -39,14 +42,15 @@ describe('readViewState', () => {
 
 describe('writeViewState', () => {
     it('leaves default values out of the URL', () => {
-        expect(writeViewState({ fileId: null, page: 1, filters: defaultFilters })).toBe('');
+        expect(writeViewState({ fileId: null, page: 1, view: 'entries', filters: defaultFilters })).toBe('');
     });
 
     it('writes a state that reads back the same', () => {
         const state = {
             fileId: 'abc',
             page: 1,
-            filters: { ...defaultFilters, levels: ['error'], query: 'a&b', regex: true },
+            view: 'groups' as const,
+            filters: { ...defaultFilters, levels: ['error'], query: 'a&b', regex: true, group: 3 },
         };
 
         expect(readViewState(writeViewState(state))).toEqual(state);
@@ -56,6 +60,7 @@ describe('writeViewState', () => {
         const query = writeViewState({
             fileId: 'abc',
             page: 4,
+            view: 'entries',
             filters: { ...defaultFilters, query: 'timeout' },
         });
 
@@ -69,6 +74,7 @@ describe('isFiltering', () => {
         expect(isFiltering({ ...defaultFilters, order: 'oldest' })).toBe(false);
         expect(isFiltering({ ...defaultFilters, levels: ['info'] })).toBe(true);
         expect(isFiltering({ ...defaultFilters, from: '2026-11-01T00:00' })).toBe(true);
+        expect(isFiltering({ ...defaultFilters, group: 4 })).toBe(true);
     });
 });
 
@@ -82,6 +88,7 @@ describe('searchParams', () => {
             from: '',
             to: '',
             order: 'newest',
+            group: undefined,
             cursor: undefined,
             limit: '50',
         });

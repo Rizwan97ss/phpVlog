@@ -10,6 +10,10 @@ interface Props {
     onQueryInput: (value: string) => void;
     onChange: (changes: Partial<Filters>) => void;
     onClear: () => void;
+    /** Show only the level filters, for the groups view. */
+    levelsOnly?: boolean;
+    /** A description of the group being shown, when there is one. */
+    groupLabel?: string | null;
 }
 
 /**
@@ -23,6 +27,8 @@ export function Toolbar({
     onQueryInput,
     onChange,
     onClear,
+    levelsOnly = false,
+    groupLabel = null,
 }: Props) {
     const levels = levelOrder.filter((level) => (levelCounts[level] ?? 0) > 0);
 
@@ -43,6 +49,17 @@ export function Toolbar({
 
     return (
         <div class="space-y-3 border-b border-zinc-200 p-4 dark:border-zinc-800">
+            {filters.group !== null && !levelsOnly && (
+                <div class="flex items-center gap-2 rounded-md bg-sky-50 px-3 py-1.5 text-sm text-sky-900 dark:bg-sky-950 dark:text-sky-200">
+                    <span class="min-w-0 flex-1 truncate">
+                        Showing one group: <span class="font-mono">{groupLabel ?? `#${filters.group}`}</span>
+                    </span>
+                    <button type="button" class="shrink-0 text-xs underline" onClick={() => onChange({ group: null })}>
+                        Show all entries
+                    </button>
+                </div>
+            )}
+            {!levelsOnly && (
             <div class="flex flex-wrap items-center gap-2">
                 <div class="relative min-w-60 flex-1">
                     <input
@@ -102,6 +119,7 @@ export function Toolbar({
                     {filters.order === 'newest' ? 'Newest first' : 'Oldest first'}
                 </button>
             </div>
+            )}
             <div class="flex flex-wrap items-center gap-1.5">
                 {levels.map((level) => {
                     const active = filters.levels.includes(level);
@@ -120,7 +138,7 @@ export function Toolbar({
                         </button>
                     );
                 })}
-                {(filters.levels.length > 0 || filters.query !== '' || filters.from !== '' || filters.to !== '') && (
+                {!levelsOnly && (filters.levels.length > 0 || filters.query !== '' || filters.from !== '' || filters.to !== '') && (
                     <button type="button" class="ml-1 text-xs text-zinc-500 underline hover:text-zinc-900 dark:hover:text-zinc-100" onClick={onClear}>
                         Clear filters
                     </button>

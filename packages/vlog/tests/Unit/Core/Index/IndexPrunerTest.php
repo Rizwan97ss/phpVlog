@@ -35,7 +35,8 @@ it('deletes the indexes of log files that are not kept', function () {
 
     $deleted = (new IndexPruner($directory))->prune([$kept]);
 
-    expect($deleted)->toBe(3);
+    // Each index has a records file, a state file, a groups file and a lock file.
+    expect($deleted)->toBe(4);
     expect(vlogIndexFiles($directory))->toBe($before);
 });
 
@@ -58,7 +59,7 @@ it('prunes at most once per interval unless forced', function () {
     vlogIndexedLog($directory);
 
     expect($pruner->prune([]))->toBe(0);
-    expect($pruner->prune([], true))->toBe(3);
+    expect($pruner->prune([], true))->toBe(4);
 });
 
 it('does nothing when the index folder does not exist', function () {
